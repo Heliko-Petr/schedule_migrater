@@ -1,0 +1,9 @@
+/.idea
+/venv
+chromedriver.exe
+schedule
+schedule.csv
+schedule.pkl
+debug.log
+token.pkl
+client_secret.json
