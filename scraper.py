@@ -11,6 +11,7 @@ import csv
 from pprint import pprint
 
 
+
 class Activity:
     def __init__(self, act, place, start_obj, stop_obj):
         self.act = act
@@ -26,8 +27,8 @@ class Activity:
 
 
 class Schedule:
-    def __init__(self, username, password):
-        self.schedule = self.get_schedule(username, password)
+    def __init__(self, username, password, id):
+        self.schedule = self.get_schedule(username, password, id)
 
     def __str__(self):
         self_str = ''
@@ -74,9 +75,10 @@ class Schedule:
             pickle.dump(self, f)
 
     @staticmethod
-    def get_schedule(username, password):
+    def get_schedule(username, password, id):
         browser = webdriver.Chrome('chromedriver.exe')
         url = 'https://login001.stockholm.se/siteminderagent/forms/loginForm.jsp?SMAGENTNAME=login001-ext.stockholm.se&POSTTARGET=https://login001.stockholm.se/NECSedu/form/b64startpage.jsp?startpage=aHR0cHM6Ly9mbnMuc3RvY2tob2xtLnNlL25nL3RpbWV0YWJsZS90aW1ldGFibGUtdmlld2VyL2Zucy5zdG9ja2hvbG0uc2Uv&TARGET=-SM-https://fns.stockholm.se/ng/timetable/timetable-viewer/fns.stockholm.se/'
+        # url = 'https://fns.stockholm.se/ng/timetable/timetable-viewer/fns.stockholm.se/'
 
         browser.get(url)
 
@@ -84,75 +86,82 @@ class Schedule:
         browser.find_element_by_name('password').send_keys(password)
         browser.find_element_by_name('submit').click()
 
-        WebDriverWait(browser, 20).until(EC.presence_of_all_elements_located((By.CLASS_NAME, 'k-input')))
-        # WebDriverWait(browser, 10).until(EC.element_to_be_clickable((By.ID, 'school')))
+        WebDriverWait(browser, 10).until(EC.presence_of_all_elements_located((By.CLASS_NAME, 'k-input')))
 
         elem = browser.find_element_by_id('school')
-        browser.execute_script("arguments[0].click();", elem)
         select = Select(elem)
         schools = select.options
-        school_names = [school.get_property('textContent') for school in schools]
-        pprint(school_names)
-        # browser.execute_script("document.getElementsByTagName('option')[5].selected='selected';")
-        # select.select_by_visible_text('Anna Whitlocks gymnasium')
-        input()
+        school_names = [school.get_property('textContent') for school in schools[1:]]  # [0] is 'Skola'
 
+        for i, name in enumerate(school_names):
+            i += 1
+            print(f'{i}: {name}')
 
-        # WebDriverWait(browser, 10).until(EC.presence_of_element_located((By.CLASS_NAME, 'textBox')))
-        #
-        # text_boxes = [x for x in browser.find_elements_by_class_name('textBox')[36:] if x.text != '']
-        # day_coords = [x.location['x'] for x in browser.find_elements_by_class_name('box')[2:7]]
-        # day_coords.append(100000000000)
-        # year = datetime.datetime.now().year
-        #
-        # labels = []
-        # locs = []
-        # dates = []
-        # datetimes = []
-        #
-        # for box in text_boxes[:5]:
-        #     text = box.text
-        #     fslash_index = text.index('/')
-        #     month = int(text[fslash_index+1:])
-        #     day = int(text[fslash_index-2:fslash_index])
-        #     dates.append((month, day))
-        #
-        # for box in text_boxes[5:]:
-        #     text = box.text
-        #     if ':' in text:  # if text specifies time
-        #         for day_idx in range(5):
-        #             if day_coords[day_idx] <= box.location['x'] < day_coords[day_idx+1]:
-        #                 colon_idx = text.index(':')
-        #                 month, day = dates[day_idx]
-        #                 hours = int(text[:colon_idx])
-        #                 minutes = int(text[colon_idx+1:])
-        #                 datetimes.append(datetime.datetime(year, month, day, hours, minutes))
-        #                 break
-        #     elif len(text) != 3:  # why 3?
-        #         if len(labels) == len(locs):  # every other text is label/loc
-        #             labels.append(text)
-        #         else:
-        #             locs.append(text)
-        #
-        # browser.close()
-        #
-        # return [
-        #     Activity(
-        #         labels[i],
-        #         locs[i],
-        #         datetimes[i*2],
-        #         datetimes[i*2+1]
-        #     )
-        #     for i in range(len(labels))
-        # ]
+        chosen_idx = int(input('choose school: ')) - 1
+        chosen_school = school_names[chosen_idx]
+        new_url = 'https://fns.stockholm.se/ng/timetable/timetable-viewer/fns.stockholm.se/' \
+                  + chosen_school.replace(' ', '%20')
 
+        browser.get(new_url)
 
-def main(username, password):
-    Schedule(username, password).save_pickle()
+        WebDriverWait(browser, 10).until(EC.presence_of_all_elements_located((By.CLASS_NAME, 'k-input')))
+        id_input = browser.find_element_by_id('signatures')
+        id_input.send_keys(id)
+        browser.find_element_by_id('signatures-button').click()
+
+        WebDriverWait(browser, 10).until(EC.presence_of_element_located((By.CLASS_NAME, 'textBox')))
+
+        text_boxes = [x for x in browser.find_elements_by_class_name('textBox')[36:] if x.text != '']
+        day_coords = [x.location['x'] for x in browser.find_elements_by_class_name('box')[2:7]]
+        day_coords.append(100000000000)
+        year = datetime.datetime.now().year
+
+        labels = []
+        locs = []
+        dates = []
+        datetimes = []
+
+        for box in text_boxes[:5]:
+            text = box.text
+            fslash_index = text.index('/')
+            month = int(text[fslash_index+1:])
+            day = int(text[fslash_index-2:fslash_index])
+            dates.append((month, day))
+
+        for box in text_boxes[5:]:
+            text = box.text
+            if ':' in text:  # if text specifies time
+                for day_idx in range(5):
+                    if day_coords[day_idx] <= box.location['x'] < day_coords[day_idx+1]:
+                        colon_idx = text.index(':')
+                        month, day = dates[day_idx]
+                        hours = int(text[:colon_idx])
+                        minutes = int(text[colon_idx+1:])
+                        datetimes.append(datetime.datetime(year, month, day, hours, minutes))
+                        break
+            elif len(text) != 3:  # why 3?
+                if len(labels) == len(locs):  # every other text is label/loc
+                    labels.append(text)
+                else:
+                    locs.append(text)
+
+        browser.close()
+
+        return [
+            Activity(
+                labels[i],
+                locs[i],
+                datetimes[i*2],
+                datetimes[i*2+1]
+            )
+            for i in range(len(labels))
+        ]
 
 
 if __name__ == '__main__':
-    password = getpass('password')
-    Schedule.get_schedule('ab61274', password)
+    password = getpass('password: ')
+    MySche = Schedule('ab61274', password, 'a6vk6ka5')
+    print(MySche)
 
 # TODO handle events without location or simular: maybe bundle event and location by coordinates or simular
+# TODO automate selectinf weeks
