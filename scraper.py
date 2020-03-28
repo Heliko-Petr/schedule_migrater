@@ -12,6 +12,7 @@ from pprint import pprint
 
 
 class Activity:
+    """"""
     def __init__(self, act, place, start_obj, stop_obj):
         self.act = act
         self.place = place
@@ -36,6 +37,7 @@ class Schedule:
         return self_str
 
     def save_csv(self):
+        """Used when importing schedule rather than manipulating calendar directly with api"""
         if os.path.exists('schedule.csv'):
             os.remove('schedule.csv')
         with open('schedule.csv', 'w', newline='') as schedule:
@@ -68,6 +70,7 @@ class Schedule:
                 )
 
     def save_pickle(self):
+        """Delete schedule.pkl if it exists, pickle self to schedule.pkl"""
         if os.path.exists('schedule.pkl'):
             os.remove('schedule.pkl')
         with open('schedule.pkl', 'wb') as f:
@@ -75,6 +78,7 @@ class Schedule:
 
     @staticmethod
     def get_schedule(username, password):
+        """Make Activity objects from browser and return them in list"""
         browser = webdriver.Chrome('chromedriver.exe')
         url = 'https://login001.stockholm.se/siteminderagent/forms/loginForm.jsp?SMAGENTNAME=login001-ext.stockholm.se&POSTTARGET=https://login001.stockholm.se/NECSedu/form/b64startpage.jsp?startpage=aHR0cHM6Ly9mbnMuc3RvY2tob2xtLnNlL25nL3RpbWV0YWJsZS90aW1ldGFibGUtdmlld2VyL2Zucy5zdG9ja2hvbG0uc2Uv&TARGET=-SM-https://fns.stockholm.se/ng/timetable/timetable-viewer/fns.stockholm.se/'
 
@@ -154,5 +158,3 @@ def main(username, password):
 if __name__ == '__main__':
     password = getpass('password')
     Schedule.get_schedule('ab61274', password)
-
-# TODO handle events without location or simular: maybe bundle event and location by coordinates or simular

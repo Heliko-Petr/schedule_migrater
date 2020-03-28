@@ -2,7 +2,7 @@ from apiclient.discovery import build
 from google_auth_oauthlib.flow import InstalledAppFlow
 
 import scraper
-from scraper import Schedule, Activity  # this is needed for pickled objets
+from scraper import Schedule, Activity  # this is needed for pickled objects
 
 import pickle
 import os
@@ -68,7 +68,7 @@ if __name__ == '__main__':
     calendar_id = get_cal_id(service, 'Skola')
     event_ids = get_event_ids(service, calendar_id)
 
-    if event_ids:
+    if event_ids:  # TODO don't delete entire calendar, only days that have changed
         for event_id in event_ids:
             delete_event(service, calendar_id, event_id)
 
