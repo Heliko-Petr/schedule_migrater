@@ -11,7 +11,6 @@ import csv
 from pprint import pprint
 
 
-
 class Activity:
     def __init__(self, act, place, start_obj, stop_obj):
         self.act = act
@@ -30,13 +29,23 @@ class Schedule:
     def __init__(self, username, password, id):
         self.schedule = self.get_schedule(username, password, id)
 
+    def __iter__(self):
+        for act in self.schedule:
+            yield act
+
     def __str__(self):
+        """Return a string representation of the schedule"""
         self_str = ''
-        for x in self.schedule:
+        for x in self:
             self_str += str(x) + '\n'*2
         return self_str
 
     def save_csv(self):
+        """
+        Save schedule to csv
+
+        used for importing schedule into google calendar, instead of using api
+        """
         if os.path.exists('schedule.csv'):
             os.remove('schedule.csv')
         with open('schedule.csv', 'w', newline='') as schedule:
@@ -69,6 +78,7 @@ class Schedule:
                 )
 
     def save_pickle(self):
+        """Save self to schedule.pkl"""
         if os.path.exists('schedule.pkl'):
             os.remove('schedule.pkl')
         with open('schedule.pkl', 'wb') as f:
@@ -78,37 +88,46 @@ class Schedule:
     def get_schedule(username, password, id):
         browser = webdriver.Chrome('chromedriver.exe')
         url = 'https://login001.stockholm.se/siteminderagent/forms/loginForm.jsp?SMAGENTNAME=login001-ext.stockholm.se&POSTTARGET=https://login001.stockholm.se/NECSedu/form/b64startpage.jsp?startpage=aHR0cHM6Ly9mbnMuc3RvY2tob2xtLnNlL25nL3RpbWV0YWJsZS90aW1ldGFibGUtdmlld2VyL2Zucy5zdG9ja2hvbG0uc2Uv&TARGET=-SM-https://fns.stockholm.se/ng/timetable/timetable-viewer/fns.stockholm.se/'
-        # url = 'https://fns.stockholm.se/ng/timetable/timetable-viewer/fns.stockholm.se/'
 
         browser.get(url)
 
+        # Login
         browser.find_element_by_name('user').send_keys(username)
         browser.find_element_by_name('password').send_keys(password)
         browser.find_element_by_name('submit').click()
 
+        # Wait until schedule-site is loaded
         WebDriverWait(browser, 10).until(EC.presence_of_all_elements_located((By.CLASS_NAME, 'k-input')))
 
+        # Get all the possible school options
         elem = browser.find_element_by_id('school')
         select = Select(elem)
         schools = select.options
         school_names = [school.get_property('textContent') for school in schools[1:]]  # [0] is 'Skola'
 
+        # Print all of the school options
         for i, name in enumerate(school_names):
             i += 1
             print(f'{i}: {name}')
 
+        # Ask the user which school they wish
         chosen_idx = int(input('choose school: ')) - 1
         chosen_school = school_names[chosen_idx]
+
+        # Generate url depending on chosen school, then get the new url
         new_url = 'https://fns.stockholm.se/ng/timetable/timetable-viewer/fns.stockholm.se/' \
                   + chosen_school.replace(' ', '%20')
-
         browser.get(new_url)
 
+        # Wait until schedule-site is loaded
         WebDriverWait(browser, 10).until(EC.presence_of_all_elements_located((By.CLASS_NAME, 'k-input')))
+
+        # input the personal id code
         id_input = browser.find_element_by_id('signatures')
         id_input.send_keys(id)
         browser.find_element_by_id('signatures-button').click()
 
+        # Wait until the schedule has loaded
         WebDriverWait(browser, 10).until(EC.presence_of_element_located((By.CLASS_NAME, 'textBox')))
 
         text_boxes = [x for x in browser.find_elements_by_class_name('textBox')[36:] if x.text != '']
@@ -159,8 +178,11 @@ class Schedule:
 
 
 if __name__ == '__main__':
+    username = 'ab61274'
+    personal_id = 'a6vk6ka5'
     password = getpass('password: ')
-    MySche = Schedule('ab61274', password, 'a6vk6ka5')
+
+    MySche = Schedule(username, password, personal_id)
     print(MySche)
 
 # TODO handle events without location or simular: maybe bundle event and location by coordinates or simular
