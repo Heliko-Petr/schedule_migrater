@@ -3,6 +3,7 @@ from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.support.ui import Select
+from selenium.webdriver.chrome.options import Options as ChromeOptions
 import datetime
 import pickle
 from getpass import getpass
@@ -86,15 +87,21 @@ class Schedule:
         with open('schedule.pkl', 'wb') as f:
             pickle.dump(self, f)
 
-    def get_schedule(self, username, password, id):
-        browser = webdriver.Chrome('chromedriver.exe')
-        url = 'https://login001.stockholm.se/siteminderagent/forms/loginForm.jsp?SMAGENTNAME=login001-ext.stockholm.se&POSTTARGET=https://login001.stockholm.se/NECSedu/form/b64startpage.jsp?startpage=aHR0cHM6Ly9mbnMuc3RvY2tob2xtLnNlL25nL3RpbWV0YWJsZS90aW1ldGFibGUtdmlld2VyL2Zucy5zdG9ja2hvbG0uc2Uv&TARGET=-SM-https://fns.stockholm.se/ng/timetable/timetable-viewer/fns.stockholm.se/'
+    @staticmethod
+    def get_schedule(user_name, user_password, user_id):
+        options = ChromeOptions()
+        options.add_argument("--headless")
+        options.add_argument('--no-sandbox')
+        options.add_argument('--disable-gpu')  # nescessary on windows systems
+        options.add_argument("--window-size=1920x1080")  # TextBoxed get weird without this
+        browser = webdriver.Chrome('chromedriver.exe', chrome_options=options)
 
+        url = 'https://login001.stockholm.se/siteminderagent/forms/loginForm.jsp?SMAGENTNAME=login001-ext.stockholm.se&POSTTARGET=https://login001.stockholm.se/NECSedu/form/b64startpage.jsp?startpage=aHR0cHM6Ly9mbnMuc3RvY2tob2xtLnNlL25nL3RpbWV0YWJsZS90aW1ldGFibGUtdmlld2VyL2Zucy5zdG9ja2hvbG0uc2Uv&TARGET=-SM-https://fns.stockholm.se/ng/timetable/timetable-viewer/fns.stockholm.se/'
         browser.get(url)
 
         # Login
-        browser.find_element_by_name('user').send_keys(username)
-        browser.find_element_by_name('password').send_keys(password)
+        browser.find_element_by_name('user').send_keys(user_name)
+        browser.find_element_by_name('password').send_keys(user_password)
         browser.find_element_by_name('submit').click()
 
         # Wait until schedule-site is loaded
@@ -125,7 +132,7 @@ class Schedule:
 
         # input the personal id code
         id_input = browser.find_element_by_id('signatures')
-        id_input.send_keys(id)
+        id_input.send_keys(user_id)
         browser.find_element_by_id('signatures-button').click()
 
         # Wait until the schedule has loaded
@@ -134,7 +141,7 @@ class Schedule:
         text_boxes = [x for x in browser.find_elements_by_class_name('textBox')[36:] if x.text != '']
         day_coords = [x.location['x'] for x in browser.find_elements_by_class_name('box')[2:7]]
         day_coords.append(100000000000)
-        year = self.was_made.year
+        year = datetime.datetime.now().year
 
         labels = []
         locs = []
@@ -186,5 +193,5 @@ if __name__ == '__main__':
     MySche = Schedule(username, password, personal_id)
     print(MySche)
 
-# TODO handle events without location or simular: maybe bundle event and location by coordinates or simular
-# TODO automate selectinf weeks
+# TODO handle events without location or simular: could be made by bundling elements by coordinates
+# TODO add multiple week functionality
