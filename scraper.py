@@ -8,10 +8,9 @@ import pickle
 from getpass import getpass
 import os
 import csv
-from pprint import pprint
 
 
-class Activity:
+class Event:
     def __init__(self, act, place, start_obj, stop_obj):
         self.act = act
         self.place = place
@@ -19,15 +18,18 @@ class Activity:
         self.stop = stop_obj
 
     def __str__(self):
-        return str('activity: ' + str(self.act) +
-                   '\nplace: ' + str(self.place) +
-                   '\nstarts: ' + str(self.start.strftime("%Y/%m/%d, %H:%M")) +
-                   '\nends: ' + str(self.stop.strftime("%Y/%m/%d, %H:%M")))
+        return '\n'.join((
+            f'start: {self.start.strftime("%Y/%m/%d, %H:%M")}',
+            f'  Event: {self.act}',
+            f'  location: {self.place}',
+            f'stop: {self.stop.strftime("%Y/%m/%d, %H:%M")}'
+        ))
 
 
 class Schedule:
-    def __init__(self, username, password, id):
-        self.schedule = self.get_schedule(username, password, id)
+    def __init__(self, user_name, user_password, user_id):
+        self.schedule = self.get_schedule(user_name, user_password, user_id)
+        self.was_made = datetime.datetime.now()
 
     def __iter__(self):
         for act in self.schedule:
@@ -84,8 +86,7 @@ class Schedule:
         with open('schedule.pkl', 'wb') as f:
             pickle.dump(self, f)
 
-    @staticmethod
-    def get_schedule(username, password, id):
+    def get_schedule(self, username, password, id):
         browser = webdriver.Chrome('chromedriver.exe')
         url = 'https://login001.stockholm.se/siteminderagent/forms/loginForm.jsp?SMAGENTNAME=login001-ext.stockholm.se&POSTTARGET=https://login001.stockholm.se/NECSedu/form/b64startpage.jsp?startpage=aHR0cHM6Ly9mbnMuc3RvY2tob2xtLnNlL25nL3RpbWV0YWJsZS90aW1ldGFibGUtdmlld2VyL2Zucy5zdG9ja2hvbG0uc2Uv&TARGET=-SM-https://fns.stockholm.se/ng/timetable/timetable-viewer/fns.stockholm.se/'
 
@@ -133,7 +134,7 @@ class Schedule:
         text_boxes = [x for x in browser.find_elements_by_class_name('textBox')[36:] if x.text != '']
         day_coords = [x.location['x'] for x in browser.find_elements_by_class_name('box')[2:7]]
         day_coords.append(100000000000)
-        year = datetime.datetime.now().year
+        year = self.was_made.year
 
         labels = []
         locs = []
@@ -167,7 +168,7 @@ class Schedule:
         browser.close()
 
         return [
-            Activity(
+            Event(
                 labels[i],
                 locs[i],
                 datetimes[i*2],

@@ -2,7 +2,7 @@ from apiclient.discovery import build
 from google_auth_oauthlib.flow import InstalledAppFlow
 
 import scraper
-from scraper import Schedule, Activity  # this is needed for pickled objects
+from scraper import Schedule, Event  # this is needed for pickled objects
 
 import pickle
 import os
