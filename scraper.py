@@ -4,11 +4,12 @@ from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.support.ui import Select
 from selenium.webdriver.chrome.options import Options as ChromeOptions
-import datetime
-import pickle
 from getpass import getpass
 import os
+import pickle
 import csv
+import datetime
+from urllib.parse import quote
 
 
 class Event:
@@ -19,18 +20,20 @@ class Event:
         self.stop = stop_obj
 
     def __str__(self):
-        return '\n'.join((
-            f'start: {self.start.strftime("%Y/%m/%d, %H:%M")}',
-            f'  Event: {self.act}',
-            f'  location: {self.place}',
-            f'stop: {self.stop.strftime("%Y/%m/%d, %H:%M")}'
-        ))
+        return '\n'.join(
+            (
+                f'start: {self.start.strftime("%Y/%m/%d, %H:%M")}',
+                f'  Event: {self.act}',
+                f'  location: {self.place}',
+                f'stop: {self.stop.strftime("%Y/%m/%d, %H:%M")}'
+            )
+        )
 
 
 class Schedule:
-    def __init__(self, user_name, user_password, user_id):
-        self.schedule = self.get_schedule(user_name, user_password, user_id)
-        self.was_made = datetime.datetime.now()
+    def __init__(self, user_name, user_password):
+        self.date_created = datetime.datetime.now()
+        self.schedule = self.get_schedule(user_name, user_password)
 
     def __iter__(self):
         for act in self.schedule:
@@ -38,17 +41,18 @@ class Schedule:
 
     def __str__(self):
         """Return a string representation of the schedule"""
+
         self_str = ''
-        for x in self:
-            self_str += str(x) + '\n'*2
+        for event in self:
+            self_str += str(event) + '\n' * 2
         return self_str
 
     def save_csv(self):
         """
         Save schedule to csv
-
         used for importing schedule into google calendar, instead of using api
         """
+
         if os.path.exists('schedule.csv'):
             os.remove('schedule.csv')
         with open('schedule.csv', 'w', newline='') as schedule:
@@ -82,21 +86,24 @@ class Schedule:
 
     def save_pickle(self):
         """Save self to schedule.pkl"""
+
         if os.path.exists('schedule.pkl'):
             os.remove('schedule.pkl')
         with open('schedule.pkl', 'wb') as f:
             pickle.dump(self, f)
 
-    @staticmethod
-    def get_schedule(user_name, user_password, user_id):
+    def get_schedule(self, user_name, user_password):
         options = ChromeOptions()
         options.add_argument("--headless")
         options.add_argument('--no-sandbox')
         options.add_argument('--disable-gpu')  # nescessary on windows systems
         options.add_argument("--window-size=1920x1080")  # TextBoxed get weird without this
-        browser = webdriver.Chrome('chromedriver.exe', chrome_options=options)
+        browser = webdriver.Chrome('chromedriver.exe', options=options)
 
+        # initial url is for login site
+        # base_url is for joining with school
         url = 'https://login001.stockholm.se/siteminderagent/forms/loginForm.jsp?SMAGENTNAME=login001-ext.stockholm.se&POSTTARGET=https://login001.stockholm.se/NECSedu/form/b64startpage.jsp?startpage=aHR0cHM6Ly9mbnMuc3RvY2tob2xtLnNlL25nL3RpbWV0YWJsZS90aW1ldGFibGUtdmlld2VyL2Zucy5zdG9ja2hvbG0uc2Uv&TARGET=-SM-https://fns.stockholm.se/ng/timetable/timetable-viewer/fns.stockholm.se/'
+        base_url = 'https://fns.stockholm.se/ng/timetable/timetable-viewer/fns.stockholm.se/'
         browser.get(url)
 
         # Login
@@ -107,33 +114,48 @@ class Schedule:
         # Wait until schedule-site is loaded
         WebDriverWait(browser, 10).until(EC.presence_of_all_elements_located((By.CLASS_NAME, 'k-input')))
 
-        # Get all the possible school options
-        elem = browser.find_element_by_id('school')
-        select = Select(elem)
-        schools = select.options
-        school_names = [school.get_property('textContent') for school in schools[1:]]  # [0] is 'Skola'
-
-        # Print all of the school options
-        for i, name in enumerate(school_names):
-            i += 1
-            print(f'{i}: {name}')
-
-        # Ask the user which school they wish
-        chosen_idx = int(input('choose school: ')) - 1
-        chosen_school = school_names[chosen_idx]
+        # Get all avalible schools and ask user which then they'd like
+        school_names = self.get_dropdown_options(browser.find_element_by_id('school'))
+        chosen_school = self.choose_dropdown_option(school_names)
 
         # Generate url depending on chosen school, then get the new url
-        new_url = 'https://fns.stockholm.se/ng/timetable/timetable-viewer/fns.stockholm.se/' \
-                  + chosen_school.replace(' ', '%20')
-        browser.get(new_url)
+        url = base_url + chosen_school + '/'
+        quote(url)
+        browser.get(url)
 
         # Wait until schedule-site is loaded
         WebDriverWait(browser, 10).until(EC.presence_of_all_elements_located((By.CLASS_NAME, 'k-input')))
 
-        # input the personal id code
-        id_input = browser.find_element_by_id('signatures')
-        id_input.send_keys(user_id)
-        browser.find_element_by_id('signatures-button').click()
+        sche_types = (
+            'class',
+            'personal id',
+            'room',
+            'teacher',
+            'subject'
+        )
+        while True:
+            sche_type = input('choose sche_type: ')
+            if sche_type in sche_types:
+                break
+
+        if sche_type == 'personal id':
+            user_id = input('personal id: ')
+            id_input = browser.find_element_by_id('signatures')
+            id_input.send_keys(user_id)
+            browser.find_element_by_id('signatures-button').click()
+        else:
+            drop_down_id = {
+                'class': 'classDropDown',
+                'room': 'roomDropDown',
+                'teacher': 'teacherDropDown',
+                'subject': 'subjectDropDown'
+            }
+
+            schedule_choices = self.get_dropdown_options(browser.find_element_by_id(drop_down_id[sche_type]))
+            chosen_schedule = self.choose_dropdown_option(schedule_choices)
+            url += sche_type + '/' + chosen_schedule
+            quote(url)
+            browser.get(url)
 
         # Wait until the schedule has loaded
         WebDriverWait(browser, 10).until(EC.presence_of_element_located((By.CLASS_NAME, 'textBox')))
@@ -141,7 +163,7 @@ class Schedule:
         text_boxes = [x for x in browser.find_elements_by_class_name('textBox')[36:] if x.text != '']
         day_coords = [x.location['x'] for x in browser.find_elements_by_class_name('box')[2:7]]
         day_coords.append(100000000000)
-        year = datetime.datetime.now().year
+        year = self.date_created.year
 
         labels = []
         locs = []
@@ -184,14 +206,41 @@ class Schedule:
             for i in range(len(labels))
         ]
 
+    @staticmethod
+    def choose_dropdown_option(options):
+        """
+        :param options: list, textcontent of element's options, from get_dropdown_options
+        :return: chosen option
+        """
+
+        for i, name in enumerate(options):
+            i += 1
+            print(f'{i}: {name}')
+        idx = int(input('choose: ')) - 1
+        option = options[idx]
+        return option
+
+    @staticmethod
+    def get_dropdown_options(element):
+        """
+        :param element: selenium WebElement object, dropdown menu
+        :return: list, textcontent of element's options
+        """
+
+        element = Select(element)
+        schools = element.options
+        options = [school.get_property('textContent') for school in schools[1:]]  # [0] is the placeholder value
+        return options
+
 
 if __name__ == '__main__':
-    username = 'ab61274'
-    personal_id = 'a6vk6ka5'
+    username = input('skolplattformen username: ')
     password = getpass('password: ')
 
-    MySche = Schedule(username, password, personal_id)
-    print(MySche)
+    MySche = Schedule(username, password)
+    print('\n', MySche)
 
+# TODO handle if user chooses schedule_type that isn't avalible
+# TODO remake parser, now needs there to be 3 text boxes per event
 # TODO handle events without location or simular: could be made by bundling elements by coordinates
 # TODO add multiple week functionality
