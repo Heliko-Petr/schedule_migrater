@@ -10,6 +10,20 @@ import pickle
 import csv
 import datetime
 from urllib.parse import quote
+from string import digits
+
+
+class Coords:
+    def __init__(self, element):
+        coords = element.location
+        self.x = coords['x']
+        self.y = coords['y']
+
+    def __gt__(self, other):
+        return self.x > other.x and self.y > other.y
+
+    def __lt__(self, other):
+        return self.x < other.x and self.y < other.y
 
 
 class Event:
@@ -94,15 +108,22 @@ class Schedule:
 
     def get_schedule(self, user_name, user_password):
         options = ChromeOptions()
-        options.add_argument("--headless")
-        options.add_argument('--no-sandbox')
-        options.add_argument('--disable-gpu')  # nescessary on windows systems
-        options.add_argument("--window-size=1920x1080")  # TextBoxed get weird without this
+        options_args = (
+            '--headless',
+            '--no - sandbox',
+            '--disable-gpu',  # nescessary on windows systems if '--headless' is option
+            '--window-size=1920x1080'  # TextBoxes get weird without this
+        )
+        # for option in options_args:
+        #     options.add_argument(option)
         browser = webdriver.Chrome('chromedriver.exe', options=options)
 
         # initial url is for login site
         # base_url is for joining with school
-        url = 'https://login001.stockholm.se/siteminderagent/forms/loginForm.jsp?SMAGENTNAME=login001-ext.stockholm.se&POSTTARGET=https://login001.stockholm.se/NECSedu/form/b64startpage.jsp?startpage=aHR0cHM6Ly9mbnMuc3RvY2tob2xtLnNlL25nL3RpbWV0YWJsZS90aW1ldGFibGUtdmlld2VyL2Zucy5zdG9ja2hvbG0uc2Uv&TARGET=-SM-https://fns.stockholm.se/ng/timetable/timetable-viewer/fns.stockholm.se/'
+        url = 'https://login001.stockholm.se/siteminderagent/forms/loginForm.jsp?SMAGENTNAME=login001-ext.stockholm' \
+              '.se&POSTTARGET=https://login001.stockholm.se/NECSedu/form/b64startpage.jsp?startpage' \
+              '=aHR0cHM6Ly9mbnMuc3RvY2tob2xtLnNlL25nL3RpbWV0YWJsZS90aW1ldGFibGUtdmlld2VyL2Zucy5zdG9ja2hvbG0uc2Uv' \
+              '&TARGET=-SM-https://fns.stockholm.se/ng/timetable/timetable-viewer/fns.stockholm.se/ '
         base_url = 'https://fns.stockholm.se/ng/timetable/timetable-viewer/fns.stockholm.se/'
         browser.get(url)
 
@@ -110,20 +131,14 @@ class Schedule:
         browser.find_element_by_name('user').send_keys(user_name)
         browser.find_element_by_name('password').send_keys(user_password)
         browser.find_element_by_name('submit').click()
-
-        # Wait until schedule-site is loaded
         WebDriverWait(browser, 10).until(EC.presence_of_all_elements_located((By.CLASS_NAME, 'k-input')))
-
-        # Get all avalible schools and ask user which then they'd like
         school_names = self.get_dropdown_options(browser.find_element_by_id('school'))
         chosen_school = self.choose_dropdown_option(school_names)
-
-        # Generate url depending on chosen school, then get the new url
         url = base_url + chosen_school + '/'
         quote(url)
         browser.get(url)
 
-        # Wait until schedule-site is loaded
+        # Wait until site is loaded
         WebDriverWait(browser, 10).until(EC.presence_of_all_elements_located((By.CLASS_NAME, 'k-input')))
 
         sche_types = (
@@ -143,6 +158,8 @@ class Schedule:
             id_input = browser.find_element_by_id('signatures')
             id_input.send_keys(user_id)
             browser.find_element_by_id('signatures-button').click()
+            browser.find_element_by_id('signatures-button').click()
+            browser.refresh()
         else:
             drop_down_id = {
                 'class': 'classDropDown',
@@ -157,54 +174,90 @@ class Schedule:
             quote(url)
             browser.get(url)
 
-        # Wait until the schedule has loaded
+        input('choose week in browser and press enter to resume: ')
+
         WebDriverWait(browser, 10).until(EC.presence_of_element_located((By.CLASS_NAME, 'textBox')))
-
-        text_boxes = [x for x in browser.find_elements_by_class_name('textBox')[36:] if x.text != '']
-        day_coords = [x.location['x'] for x in browser.find_elements_by_class_name('box')[2:7]]
-        day_coords.append(100000000000)
-        year = self.date_created.year
-
-        labels = []
-        locs = []
-        dates = []
-        datetimes = []
-
-        for box in text_boxes[:5]:
-            text = box.text
-            fslash_index = text.index('/')
-            month = int(text[fslash_index+1:])
-            day = int(text[fslash_index-2:fslash_index])
-            dates.append((month, day))
-
-        for box in text_boxes[5:]:
-            text = box.text
-            if ':' in text:  # if text specifies time
-                for day_idx in range(5):
-                    if day_coords[day_idx] <= box.location['x'] < day_coords[day_idx+1]:
-                        colon_idx = text.index(':')
-                        month, day = dates[day_idx]
-                        hours = int(text[:colon_idx])
-                        minutes = int(text[colon_idx+1:])
-                        datetimes.append(datetime.datetime(year, month, day, hours, minutes))
-                        break
-            elif len(text) != 3:  # why 3?
-                if len(labels) == len(locs):  # every other text is label/loc
-                    labels.append(text)
-                else:
-                    locs.append(text)
-
+        schedule = self.parse(browser)
         browser.close()
+        return schedule
 
-        return [
-            Event(
-                labels[i],
-                locs[i],
-                datetimes[i*2],
-                datetimes[i*2+1]
-            )
-            for i in range(len(labels))
-        ]
+    def parse(self, selenium):
+        year = self.date_created.year
+        allowed_timestamp_characters = digits + ':'
+
+        # textBox element 0-36 are peripheral time stamps, for visual reference
+        textboxes = [element for element in selenium.find_elements_by_class_name('textBox')[36:] if element.text]
+        day_textboxes = textboxes[:5]
+
+        time_stamps = []
+        all_attributes = []
+        for element in textboxes:
+            text = element.text
+            if ':' in text and all(char in allowed_timestamp_characters for char in text):
+                time_stamps.append(element)
+            else:
+                all_attributes.append(element)
+
+        # group time_stamps in pairs
+        time_stamp_pairs = [(time_stamps[idx], time_stamps[idx+1]) for idx in range(0, len(time_stamps), +2)]
+
+        events = []
+
+        for pair in time_stamp_pairs:
+            start, stop = pair
+            attributes = []
+
+            coords_start = Coords(start)
+            coords_stop = Coords(stop)
+
+            for element in day_textboxes:
+                coords = Coords(element)
+                if coords.x >= coords_start.x:
+                    day_element = element
+
+            for element in all_attributes:  # can be optimized
+                coords = Coords(element)
+                if coords_start < coords < coords_stop:
+                    attributes.append(element)
+
+            if len(attributes) == 3:
+                event, teacher, location = [attribute.text for attribute in attributes]
+            elif attributes:
+                event = attributes[0].text
+                teacher = ''
+                location = ''
+            else:
+                event = ''
+                teacher = ''
+                location = ''
+
+            month, day = self.make_date(day_element)
+            hours_start, minutes_start = self.make_time(start)
+            hours_stop, minutes_stop = self.make_time(stop)
+
+            datetime_start = datetime.datetime(year, month, day, hours_start, minutes_start)
+            datetime_stop = datetime.datetime(year, month, day, hours_stop, minutes_stop)
+
+            event = Event(event, location, datetime_start, datetime_stop)
+            events.append(event)
+
+        return events
+
+    @staticmethod
+    def make_date(element):
+        text = element.text
+        idx = text.index('/')
+        month = int(text[idx + 1:])
+        day = int(text[idx - 2:idx])
+        return month, day
+
+    @staticmethod
+    def make_time(element):
+        text = element.text
+        idx = text.index(':')
+        hours = int(text[:idx])
+        minutes = int(text[idx + 1:])
+        return hours, minutes
 
     @staticmethod
     def choose_dropdown_option(options):
@@ -241,6 +294,6 @@ if __name__ == '__main__':
     print('\n', MySche)
 
 # TODO handle if user chooses schedule_type that isn't avalible
-# TODO remake parser, now needs there to be 3 text boxes per event
 # TODO handle events without location or simular: could be made by bundling elements by coordinates
 # TODO add multiple week functionality
+# TODO if two lessons are besides each other, one might end when the other one starts !!!
