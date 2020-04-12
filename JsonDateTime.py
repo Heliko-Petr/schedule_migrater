@@ -1,6 +1,9 @@
 """Datetime subclass with functionality for writing and reading from dict"""
 
-class JsonDateTime(datetime.datetime):
+from datetime import datetime
+
+
+class JsonDateTime(datetime):
     @property
     def dict_(self):
         """Return self translated to dictionary"""
