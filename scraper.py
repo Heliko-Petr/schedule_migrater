@@ -8,9 +8,11 @@ from getpass import getpass
 import os
 import pickle
 import csv
-import datetime
 from urllib.parse import quote
 from string import digits
+from JsonDateTime import JsonDateTime
+from pprint import pprint
+import json
 
 
 class Coords:
@@ -42,12 +44,29 @@ class Event:
                 f'stop: {self.stop.strftime("%Y/%m/%d, %H:%M")}'
             )
         )
+    
+    @property
+    def dict_(self):
+        return {
+            'title': self.act,
+            'location': self.place,
+            'start': self.start.dict_,
+            'stop':self.stop.dict_
+        }
 
+    @classmethod
+    def from_dict(cls, dict_):
+        return cls(
+            dict_['title'],
+            dict_['location'],
+            JsonDateTime.from_dict(dict_['start']),
+            JsonDateTime.from_dict(dict_['stop'])
+        )
 
 class Schedule:
-    def __init__(self, user_name, user_password):
-        self.date_created = datetime.datetime.now()
-        self.schedule = self.get_schedule(user_name, user_password)
+    def __init__(self, events, date_created):
+        self.schedule = events
+        self.date_created = date_created
 
     def __iter__(self):
         for act in self.schedule:
@@ -60,6 +79,23 @@ class Schedule:
         for event in self:
             self_str += str(event) + '\n' * 2
         return self_str
+
+    @classmethod
+    def from_selenium(cls, user_name, user_password):
+        return cls(get_schedule(user_name, user_password), JsonDateTime.now())
+
+    @classmethod
+    def from_dict(cls, dict_):
+        return cls([Event.from_dict(dict_) for dict_ in dict_['data']], JsonDateTime.now())
+
+    @property
+    def dict_(self):
+        return {
+            'info': {
+                'created': self.date_created.dict_
+            },
+            'data': [event.dict_ for event in self]
+        } 
 
     def save_csv(self):
         """
@@ -158,8 +194,6 @@ class Schedule:
             id_input = browser.find_element_by_id('signatures')
             id_input.send_keys(user_id)
             browser.find_element_by_id('signatures-button').click()
-            browser.find_element_by_id('signatures-button').click()
-            browser.refresh()
         else:
             drop_down_id = {
                 'class': 'classDropDown',
@@ -235,8 +269,8 @@ class Schedule:
             hours_start, minutes_start = self.make_time(start)
             hours_stop, minutes_stop = self.make_time(stop)
 
-            datetime_start = datetime.datetime(year, month, day, hours_start, minutes_start)
-            datetime_stop = datetime.datetime(year, month, day, hours_stop, minutes_stop)
+            datetime_start = JsonDateTime(year, month, day, hours_start, minutes_start)
+            datetime_stop = JsonDateTime(year, month, day, hours_stop, minutes_stop)
 
             event = Event(event, location, datetime_start, datetime_stop)
             events.append(event)
@@ -287,13 +321,18 @@ class Schedule:
 
 
 if __name__ == '__main__':
-    username = input('skolplattformen username: ')
-    password = getpass('password: ')
+    # username = input('skolplattformen username: ')
+    # password = getpass('password: ')
 
-    MySche = Schedule(username, password)
-    print('\n', MySche)
+    # MySche = Schedule(username, password)
+    with open('test.json', 'r') as file:
+        mysche = Schedule.from_dict(json.load(file))
+        print(mysche)
 
 # TODO handle if user chooses schedule_type that isn't avalible
 # TODO handle events without location or simular: could be made by bundling elements by coordinates
 # TODO add multiple week functionality
 # TODO if two lessons are besides each other, one might end when the other one starts !!!
+# TODO logging
+# TODO maybe make __init__ generator
+# TODO comment and document
