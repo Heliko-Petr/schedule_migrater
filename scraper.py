@@ -11,19 +11,36 @@ import csv
 import datetime
 from urllib.parse import quote
 from string import digits
-
+import operator
 
 class Coords:
-    def __init__(self, element):
+    def __init__(self, x, y):
+        self.x = x
+        self.y = y
+
+    @classmethod
+    def from_element(cls, element):
         coords = element.location
-        self.x = coords['x']
-        self.y = coords['y']
+        x, y = coords['x'], coords['y']
+        return cls(x, y)
+
+    def __str__(self):
+        return f'({self.x}, {self.y})'
+
+    def compare(self, other, op):
+        return op(self.x, other.x) and op(self.y, other.y)
 
     def __gt__(self, other):
-        return self.x > other.x and self.y > other.y
+        return self.compare(other, operator.__gt__)
 
     def __lt__(self, other):
-        return self.x < other.x and self.y < other.y
+        return self.compare(other, operator.__lt__)
+
+    def __ge__(self, other):
+        return self.compare(other, operator.__ge__)
+
+    def __le__(self, other):
+        return self.compare(other, operator.__le__)
 
 
 class Event:
@@ -61,6 +78,9 @@ class Schedule:
             self_str += str(event) + '\n' * 2
         return self_str
 
+    def __len__(self):
+        return len(self.schedule)
+
     def save_csv(self):
         """
         Save schedule to csv
@@ -97,14 +117,6 @@ class Schedule:
                         act.place
                     ]
                 )
-
-    def save_pickle(self):
-        """Save self to schedule.pkl"""
-
-        if os.path.exists('schedule.pkl'):
-            os.remove('schedule.pkl')
-        with open('schedule.pkl', 'wb') as f:
-            pickle.dump(self, f)
 
     def get_schedule(self, user_name, user_password):
         options = ChromeOptions()
@@ -156,10 +168,9 @@ class Schedule:
         if sche_type == 'personal id':
             user_id = input('personal id: ')
             id_input = browser.find_element_by_id('signatures')
+            id_input.click()
             id_input.send_keys(user_id)
             browser.find_element_by_id('signatures-button').click()
-            browser.find_element_by_id('signatures-button').click()
-            browser.refresh()
         else:
             drop_down_id = {
                 'class': 'classDropDown',
@@ -183,65 +194,130 @@ class Schedule:
 
     def parse(self, selenium):
         year = self.date_created.year
+
+        # All of the characters allowed in timestamps
         allowed_timestamp_characters = digits + ':'
 
-        # textBox element 0-36 are peripheral time stamps, for visual reference
-        textboxes = [element for element in selenium.find_elements_by_class_name('textBox')[36:] if element.text]
-        day_textboxes = textboxes[:5]
+        # clrs that boxes representing events don't have
+        non_class_clrs = (
+            (0, 0, 0),
+            (204, 204, 204),
+            (211, 211, 211)
+        )
 
-        time_stamps = []
-        all_attributes = []
+        #TODO 34 is 36 in my schedule, depends on how many timestamps are in the peripheral
+        textboxes = [element for element in selenium.find_elements_by_class_name('textBox') if element.text]
+        day_textboxes = [box for box in textboxes if '/' in box.text and 'dag' in box.text]
+        boxes = selenium.find_elements_by_class_name('box')
+        day_boxes = boxes[2:7]
+
+        # TODO fix
+        day_width = float(self.parse_style(day_boxes[0])['width'][:-2])
+
+        days = [
+            {
+                'coords': Coords.from_element(box),
+                'date': self.make_date(textbox)
+            }
+            for box, textbox in zip(day_boxes, day_textboxes)
+        ]
+
+        # Seperate textboxes into timestamps and misc attributes
+        timestamps = []
+        attributes = []
         for element in textboxes:
-            text = element.text
-            if ':' in text and all(char in allowed_timestamp_characters for char in text):
-                time_stamps.append(element)
+            if ':' in element.text and all(char in allowed_timestamp_characters for char in element.text):
+                for day in days:
+                    if day['coords'].x + day_width > Coords.from_element(element).x > day['coords'].x:
+                        month, day = day['date']
+                        hour, minute = self.make_time(element)
+                        dt = datetime.datetime(year, month, day, hour, minute)
+                        timestamps.append(
+                            {
+                                'datetime': dt,
+                                'coords': Coords.from_element(element)
+                            }
+                        )
+                        break
             else:
-                all_attributes.append(element)
+                attributes.append(element)
 
-        # group time_stamps in pairs
-        time_stamp_pairs = [(time_stamps[idx], time_stamps[idx+1]) for idx in range(0, len(time_stamps), +2)]
+        # TODO fix
+        # Get fontsize for timestamps
+        for element in textboxes:
+            if ':' in element.text and all(char in allowed_timestamp_characters for char in element.text):
+                style = self.parse_style(element)
+                font_size = float(style['font-size'][:-2])
+                break
 
+        # get boxes that represent events
+        class_boxes = []
+        for box in boxes:
+            if days[0]['coords'].x <= Coords.from_element(box).x <= days[-1]['coords'].x + day_width:
+                box_style = self.parse_style(box)
+                clr_str = box_style['background-color'][4:-1]
+                clr = clr_str.split(', ')
+                clr = tuple([int(num) for num in clr])
+                if clr not in non_class_clrs:
+                    class_boxes.append(box)
+
+        # Get start, stop attributes for each event
         events = []
+        for box in class_boxes:
+            box_coords = Coords.from_element(box)
+            box_style_dict = self.parse_style(box)
+            width = int(box_style_dict['width'][:-2])
+            height = int(box_style_dict['height'][:-2])
+            corner = Coords(box_coords.x + width, box_coords.y + height)
 
-        for pair in time_stamp_pairs:
-            start, stop = pair
-            attributes = []
+            for day in days[::-1]:
+                day_coords = day['coords']
+                if box_coords >= day_coords:
+                    break
 
-            coords_start = Coords(start)
-            coords_stop = Coords(stop)
 
-            for element in day_textboxes:
-                coords = Coords(element)
-                if coords.x >= coords_start.x:
-                    day_element = element
+            # TODO check for conflict
+            # get start and stop datetime
+            start, stop = False, False
+            for stamp in timestamps:
+                stamp_coords = stamp['coords']
+                if stamp_coords.y < box_coords.y < box_coords.y + font_size\
+                and day_coords.x < stamp_coords.x < day_coords.x + day_width:
+                    start = stamp['datetime']
+                if stamp_coords.y < corner.y < corner.y + font_size\
+                and box_coords.x < stamp_coords.x < day_coords.x + day_width:
+                    stop = stamp['datetime']
+            if start and stop:
+                # TODO delete attributes that are local from global
+                local_attributes = []
+                for attribute in attributes:
+                    if box_coords < Coords.from_element(attribute) < corner:
+                        local_attributes.append(attribute)
 
-            for element in all_attributes:  # can be optimized
-                coords = Coords(element)
-                if coords_start < coords < coords_stop:
-                    attributes.append(element)
-
-            if len(attributes) == 3:
-                event, teacher, location = [attribute.text for attribute in attributes]
-            elif attributes:
-                event = attributes[0].text
-                teacher = ''
-                location = ''
-            else:
-                event = ''
-                teacher = ''
-                location = ''
-
-            month, day = self.make_date(day_element)
-            hours_start, minutes_start = self.make_time(start)
-            hours_stop, minutes_stop = self.make_time(stop)
-
-            datetime_start = datetime.datetime(year, month, day, hours_start, minutes_start)
-            datetime_stop = datetime.datetime(year, month, day, hours_stop, minutes_stop)
-
-            event = Event(event, location, datetime_start, datetime_stop)
-            events.append(event)
-
+                if len(local_attributes) == 3:
+                    event, teacher, location = [attribute.text for attribute in local_attributes]
+                elif local_attributes:
+                    event = local_attributes[0].text
+                    teacher = ''
+                    location = ''
+                else:
+                    event = ''
+                    teacher = ''
+                    location = ''
+                events.append(Event(event, location, start, stop))
         return events
+
+
+    # Make dictionary from elements style attribute
+    @staticmethod
+    def parse_style(element):
+        style_str = element.get_attribute('style')
+        style_list = style_str.split('; ')
+        attr_dict = {}
+        for item in style_list:
+            key, value = item.split(': ')
+            attr_dict[key] = value
+        return attr_dict
 
     @staticmethod
     def make_date(element):
@@ -286,14 +362,14 @@ class Schedule:
         return options
 
 
-if __name__ == '__main__':
-    username = input('skolplattformen username: ')
-    password = getpass('password: ')
+def main():
+    pass
 
-    MySche = Schedule(username, password)
-    print('\n', MySche)
+if __name__ == '__main__':
+    sche = Schedule('ab61274', getpass('password: '))
+    print('\n'*10)
+    print(f'len: {len(sche)}\n')
+    print(sche)
 
 # TODO handle if user chooses schedule_type that isn't avalible
-# TODO handle events without location or simular: could be made by bundling elements by coordinates
 # TODO add multiple week functionality
-# TODO if two lessons are besides each other, one might end when the other one starts !!!

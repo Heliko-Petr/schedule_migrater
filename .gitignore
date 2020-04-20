@@ -7,3 +7,6 @@ schedule.pkl
 debug.log
 token.pkl
 client_secret.json
+/.vscode
+/__pycache__
+test.py
