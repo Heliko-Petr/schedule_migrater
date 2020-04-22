@@ -5,13 +5,15 @@ from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.support.ui import Select
 from selenium.webdriver.chrome.options import Options as ChromeOptions
 from getpass import getpass
-import os
-import pickle
-import csv
-import datetime
 from urllib.parse import quote
 from string import digits
 import operator
+from JsonDateTime import JsonDateTime
+from pprint import pprint
+import json
+import os
+import csv
+
 
 class Coords:
     def __init__(self, x, y):
@@ -60,11 +62,28 @@ class Event:
             )
         )
 
+    @property
+    def dict_(self):
+        return {
+            'title': self.act,
+            'location': self.place,
+            'start': self.start.dict_,
+            'stop':self.stop.dict_
+        }
+
+    @classmethod
+    def from_dict(cls, dict_):
+        return cls(
+            dict_['title'],
+            dict_['location'],
+            JsonDateTime.from_dict(dict_['start']),
+            JsonDateTime.from_dict(dict_['stop'])
+        )
 
 class Schedule:
-    def __init__(self, user_name, user_password):
-        self.date_created = datetime.datetime.now()
-        self.schedule = self.get_schedule(user_name, user_password)
+    def __init__(self, events, date_created):
+        self.date_created = date_created
+        self.schedule = events
 
     def __iter__(self):
         for act in self.schedule:
@@ -80,6 +99,28 @@ class Schedule:
 
     def __len__(self):
         return len(self.schedule)
+    @classmethod
+    def from_selenium(cls, username, password):
+        dt = JsonDateTime.now()
+        schedule = cls.get_schedule(username, password, dt)
+        return cls(schedule, dt)
+
+    @classmethod
+    def from_dict(cls, dict_):
+        return cls(
+            [Event.from_dict(dict_) for dict_ in dict_['data']],
+            JsonDateTime.now()
+        )
+
+    @property
+    def dict_(self):
+        return {
+            'info': {
+                'created': self.date_created.dict_
+            },
+            'data': [event.dict_ for event in self]
+        }
+
 
     def save_csv(self):
         """
@@ -118,7 +159,8 @@ class Schedule:
                     ]
                 )
 
-    def get_schedule(self, user_name, user_password):
+    @classmethod
+    def get_schedule(cls, user_name, user_password, dt):
         options = ChromeOptions()
         options_args = (
             '--headless',
@@ -144,8 +186,8 @@ class Schedule:
         browser.find_element_by_name('password').send_keys(user_password)
         browser.find_element_by_name('submit').click()
         WebDriverWait(browser, 10).until(EC.presence_of_all_elements_located((By.CLASS_NAME, 'k-input')))
-        school_names = self.get_dropdown_options(browser.find_element_by_id('school'))
-        chosen_school = self.choose_dropdown_option(school_names)
+        school_names = cls.get_dropdown_options(browser.find_element_by_id('school'))
+        chosen_school = cls.choose_dropdown_option(school_names)
         url = base_url + chosen_school + '/'
         quote(url)
         browser.get(url)
@@ -179,8 +221,8 @@ class Schedule:
                 'subject': 'subjectDropDown'
             }
 
-            schedule_choices = self.get_dropdown_options(browser.find_element_by_id(drop_down_id[sche_type]))
-            chosen_schedule = self.choose_dropdown_option(schedule_choices)
+            schedule_choices = cls.get_dropdown_options(browser.find_element_by_id(drop_down_id[sche_type]))
+            chosen_schedule = cls.choose_dropdown_option(schedule_choices)
             url += sche_type + '/' + chosen_schedule
             quote(url)
             browser.get(url)
@@ -188,14 +230,13 @@ class Schedule:
         input('choose week in browser and press enter to resume: ')
 
         WebDriverWait(browser, 10).until(EC.presence_of_element_located((By.CLASS_NAME, 'textBox')))
-        schedule = self.parse(browser)
+        schedule = cls.parse(browser, dt)
         browser.close()
         return schedule
 
-    def parse(self, selenium):
-        year = self.date_created.year
-
-        # All of the characters allowed in timestamps
+    @classmethod
+    def parse(cls, selenium, dt):
+        year = dt.year
         allowed_timestamp_characters = digits + ':'
 
         # clrs that boxes representing events don't have
@@ -212,12 +253,12 @@ class Schedule:
         day_boxes = boxes[2:7]
 
         # TODO fix
-        day_width = float(self.parse_style(day_boxes[0])['width'][:-2])
+        day_width = float(cls.parse_style(day_boxes[0])['width'][:-2])
 
         days = [
             {
                 'coords': Coords.from_element(box),
-                'date': self.make_date(textbox)
+                'date': cls.make_date(textbox)
             }
             for box, textbox in zip(day_boxes, day_textboxes)
         ]
@@ -230,8 +271,8 @@ class Schedule:
                 for day in days:
                     if day['coords'].x + day_width > Coords.from_element(element).x > day['coords'].x:
                         month, day = day['date']
-                        hour, minute = self.make_time(element)
-                        dt = datetime.datetime(year, month, day, hour, minute)
+                        hour, minute = cls.make_time(element)
+                        dt = JsonDateTime(year, month, day, hour, minute)
                         timestamps.append(
                             {
                                 'datetime': dt,
@@ -246,7 +287,7 @@ class Schedule:
         # Get fontsize for timestamps
         for element in textboxes:
             if ':' in element.text and all(char in allowed_timestamp_characters for char in element.text):
-                style = self.parse_style(element)
+                style = cls.parse_style(element)
                 font_size = float(style['font-size'][:-2])
                 break
 
@@ -254,7 +295,7 @@ class Schedule:
         class_boxes = []
         for box in boxes:
             if days[0]['coords'].x <= Coords.from_element(box).x <= days[-1]['coords'].x + day_width:
-                box_style = self.parse_style(box)
+                box_style = cls.parse_style(box)
                 clr_str = box_style['background-color'][4:-1]
                 clr = clr_str.split(', ')
                 clr = tuple([int(num) for num in clr])
@@ -265,7 +306,7 @@ class Schedule:
         events = []
         for box in class_boxes:
             box_coords = Coords.from_element(box)
-            box_style_dict = self.parse_style(box)
+            box_style_dict = cls.parse_style(box)
             width = int(box_style_dict['width'][:-2])
             height = int(box_style_dict['height'][:-2])
             corner = Coords(box_coords.x + width, box_coords.y + height)
@@ -365,11 +406,19 @@ class Schedule:
 def main():
     pass
 
+
 if __name__ == '__main__':
-    sche = Schedule('ab61274', getpass('password: '))
-    print('\n'*10)
-    print(f'len: {len(sche)}\n')
-    print(sche)
+    # mysche = Schedule.from_selenium('ab61274', getpass('pass: '))
+    # with open('schedule.json', 'w') as file:
+    #     json.dump(mysche.dict_, file, indent=True)
+    with open('schedule.json', 'r') as file:
+        mysche = Schedule.from_dict(json.load(file))
+        pprint(mysche.dict_)
 
 # TODO handle if user chooses schedule_type that isn't avalible
+# TODO handle events without location or simular: could be made by bundling elements by coordinates
 # TODO add multiple week functionality
+# TODO if two lessons are besides each other, one might end when the other one starts !!!
+# TODO logging
+# TODO maybe make __init__ generator
+# TODO comment and document
