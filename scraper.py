@@ -44,7 +44,7 @@ class Event:
                 f'stop: {self.stop.strftime("%Y/%m/%d, %H:%M")}'
             )
         )
-    
+
     @property
     def dict_(self):
         return {
@@ -65,8 +65,8 @@ class Event:
 
 class Schedule:
     def __init__(self, events, date_created):
-        self.schedule = events
         self.date_created = date_created
+        self.schedule = events
 
     def __iter__(self):
         for act in self.schedule:
@@ -81,12 +81,17 @@ class Schedule:
         return self_str
 
     @classmethod
-    def from_selenium(cls, user_name, user_password):
-        return cls(get_schedule(user_name, user_password), JsonDateTime.now())
+    def from_selenium(cls, username, password):
+        dt = JsonDateTime.now()
+        schedule = cls.get_schedule(username, password, dt)
+        return cls(schedule, dt)
 
     @classmethod
     def from_dict(cls, dict_):
-        return cls([Event.from_dict(dict_) for dict_ in dict_['data']], JsonDateTime.now())
+        return cls(
+            [Event.from_dict(dict_) for dict_ in dict_['data']],
+            JsonDateTime.now()
+        )
 
     @property
     def dict_(self):
@@ -95,7 +100,7 @@ class Schedule:
                 'created': self.date_created.dict_
             },
             'data': [event.dict_ for event in self]
-        } 
+        }
 
     def save_csv(self):
         """
@@ -134,15 +139,8 @@ class Schedule:
                     ]
                 )
 
-    def save_pickle(self):
-        """Save self to schedule.pkl"""
-
-        if os.path.exists('schedule.pkl'):
-            os.remove('schedule.pkl')
-        with open('schedule.pkl', 'wb') as f:
-            pickle.dump(self, f)
-
-    def get_schedule(self, user_name, user_password):
+    @classmethod
+    def get_schedule(cls, user_name, user_password, dt):
         options = ChromeOptions()
         options_args = (
             '--headless',
@@ -168,8 +166,8 @@ class Schedule:
         browser.find_element_by_name('password').send_keys(user_password)
         browser.find_element_by_name('submit').click()
         WebDriverWait(browser, 10).until(EC.presence_of_all_elements_located((By.CLASS_NAME, 'k-input')))
-        school_names = self.get_dropdown_options(browser.find_element_by_id('school'))
-        chosen_school = self.choose_dropdown_option(school_names)
+        school_names = cls.get_dropdown_options(browser.find_element_by_id('school'))
+        chosen_school = cls.choose_dropdown_option(school_names)
         url = base_url + chosen_school + '/'
         quote(url)
         browser.get(url)
@@ -202,8 +200,8 @@ class Schedule:
                 'subject': 'subjectDropDown'
             }
 
-            schedule_choices = self.get_dropdown_options(browser.find_element_by_id(drop_down_id[sche_type]))
-            chosen_schedule = self.choose_dropdown_option(schedule_choices)
+            schedule_choices = cls.get_dropdown_options(browser.find_element_by_id(drop_down_id[sche_type]))
+            chosen_schedule = cls.choose_dropdown_option(schedule_choices)
             url += sche_type + '/' + chosen_schedule
             quote(url)
             browser.get(url)
@@ -211,12 +209,13 @@ class Schedule:
         input('choose week in browser and press enter to resume: ')
 
         WebDriverWait(browser, 10).until(EC.presence_of_element_located((By.CLASS_NAME, 'textBox')))
-        schedule = self.parse(browser)
+        schedule = cls.parse(browser, dt)
         browser.close()
         return schedule
 
-    def parse(self, selenium):
-        year = self.date_created.year
+    @classmethod
+    def parse(cls, selenium, dt):
+        year = dt.year
         allowed_timestamp_characters = digits + ':'
 
         # textBox element 0-36 are peripheral time stamps, for visual reference
@@ -265,9 +264,9 @@ class Schedule:
                 teacher = ''
                 location = ''
 
-            month, day = self.make_date(day_element)
-            hours_start, minutes_start = self.make_time(start)
-            hours_stop, minutes_stop = self.make_time(stop)
+            month, day = cls.make_date(day_element)
+            hours_start, minutes_start = cls.make_time(start)
+            hours_stop, minutes_stop = cls.make_time(stop)
 
             datetime_start = JsonDateTime(year, month, day, hours_start, minutes_start)
             datetime_stop = JsonDateTime(year, month, day, hours_stop, minutes_stop)
@@ -319,13 +318,9 @@ class Schedule:
         options = [school.get_property('textContent') for school in schools[1:]]  # [0] is the placeholder value
         return options
 
-
 if __name__ == '__main__':
-    # username = input('skolplattformen username: ')
-    # password = getpass('password: ')
-
-    # MySche = Schedule(username, password)
-    with open('test.json', 'r') as file:
+    # mysche = Schedule.from_selenium('ab61274', getpass('pass: '))
+    with open('schedule.json', 'r') as file:
         mysche = Schedule.from_dict(json.load(file))
         print(mysche)
 

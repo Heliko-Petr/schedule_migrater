@@ -11,3 +11,4 @@ test.py
 test.json
 /__pycache__
 /.vscode
+schedule.json
