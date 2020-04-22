@@ -10,3 +10,4 @@ client_secret.json
 /.vscode
 /__pycache__
 test.py
+schedule.json
