@@ -44,6 +44,21 @@ class Coords:
     def __le__(self, other):
         return self.compare(other, operator.__le__)
 
+class SnappyElement:
+    def __init__(self, element):
+        self.text = element.text
+        self.coords = Coords.from_element(element)
+        self.style = self.parse_attribute(element, 'style')
+
+    @staticmethod
+    def parse_attribute(element, attribute):
+        style_str = element.get_attribute(attribute)
+        style_list = style_str.split('; ')
+        attr_dict = {}
+        for item in style_list:
+            key, value = item.split(': ')
+            attr_dict[key] = value
+        return attr_dict
 
 class Event:
     def __init__(self, act, place, start_obj, stop_obj):
@@ -414,6 +429,7 @@ if __name__ == '__main__':
     with open('schedule.json', 'r') as file:
         mysche = Schedule.from_dict(json.load(file))
         pprint(mysche.dict_)
+        print('\n'*5, print(len(mysche)))
 
 # TODO handle if user chooses schedule_type that isn't avalible
 # TODO handle events without location or simular: could be made by bundling elements by coordinates
