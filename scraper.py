@@ -45,6 +45,8 @@ class Coords:
         return self.compare(other, operator.__le__)
 
 class SnappyElement:
+    """SnappyElement contains the information from WebElement that is used"""
+
     def __init__(self, element):
         self.text = element.text
         self.coords = Coords.from_element(element)
@@ -246,7 +248,6 @@ class Schedule:
 
         WebDriverWait(browser, 10).until(EC.presence_of_element_located((By.CLASS_NAME, 'textBox')))
         schedule = cls.parse(browser, dt)
-        browser.close()
         return schedule
 
     @classmethod
@@ -262,17 +263,18 @@ class Schedule:
         )
 
         #TODO 34 is 36 in my schedule, depends on how many timestamps are in the peripheral
-        textboxes = [element for element in selenium.find_elements_by_class_name('textBox') if element.text]
+        textboxes = [SnappyElement(element) for element in selenium.find_elements_by_class_name('textBox') if element.text]
+        boxes = list(map(SnappyElement, selenium.find_elements_by_class_name('box')))
+        selenium.close()
         day_textboxes = [box for box in textboxes if '/' in box.text and 'dag' in box.text]
-        boxes = selenium.find_elements_by_class_name('box')
         day_boxes = boxes[2:7]
 
         # TODO fix
-        day_width = float(cls.parse_style(day_boxes[0])['width'][:-2])
+        day_width = float(day_boxes[0].style['width'][:-2])
 
         days = [
             {
-                'coords': Coords.from_element(box),
+                'coords': box.coords,
                 'date': cls.make_date(textbox)
             }
             for box, textbox in zip(day_boxes, day_textboxes)
@@ -284,14 +286,14 @@ class Schedule:
         for element in textboxes:
             if ':' in element.text and all(char in allowed_timestamp_characters for char in element.text):
                 for day in days:
-                    if day['coords'].x + day_width > Coords.from_element(element).x > day['coords'].x:
+                    if day['coords'].x + day_width > element.coords.x > day['coords'].x:
                         month, day = day['date']
                         hour, minute = cls.make_time(element)
                         dt = JsonDateTime(year, month, day, hour, minute)
                         timestamps.append(
                             {
                                 'datetime': dt,
-                                'coords': Coords.from_element(element)
+                                'coords': element.coords 
                             }
                         )
                         break
@@ -302,16 +304,14 @@ class Schedule:
         # Get fontsize for timestamps
         for element in textboxes:
             if ':' in element.text and all(char in allowed_timestamp_characters for char in element.text):
-                style = cls.parse_style(element)
-                font_size = float(style['font-size'][:-2])
+                font_size = float(element.style['font-size'][:-2])
                 break
 
         # get boxes that represent events
         class_boxes = []
         for box in boxes:
-            if days[0]['coords'].x <= Coords.from_element(box).x <= days[-1]['coords'].x + day_width:
-                box_style = cls.parse_style(box)
-                clr_str = box_style['background-color'][4:-1]
+            if days[0]['coords'].x <= box.coords.x <= days[-1]['coords'].x + day_width:
+                clr_str = box.style['background-color'][4:-1]
                 clr = clr_str.split(', ')
                 clr = tuple([int(num) for num in clr])
                 if clr not in non_class_clrs:
@@ -320,8 +320,8 @@ class Schedule:
         # Get start, stop attributes for each event
         events = []
         for box in class_boxes:
-            box_coords = Coords.from_element(box)
-            box_style_dict = cls.parse_style(box)
+            box_coords = box.coords
+            box_style_dict = box.style
             width = int(box_style_dict['width'][:-2])
             height = int(box_style_dict['height'][:-2])
             corner = Coords(box_coords.x + width, box_coords.y + height)
@@ -347,7 +347,7 @@ class Schedule:
                 # TODO delete attributes that are local from global
                 local_attributes = []
                 for attribute in attributes:
-                    if box_coords < Coords.from_element(attribute) < corner:
+                    if box_coords < attribute.coords < corner:
                         local_attributes.append(attribute)
 
                 if len(local_attributes) == 3:
@@ -363,17 +363,6 @@ class Schedule:
                 events.append(Event(event, location, start, stop))
         return events
 
-
-    # Make dictionary from elements style attribute
-    @staticmethod
-    def parse_style(element):
-        style_str = element.get_attribute('style')
-        style_list = style_str.split('; ')
-        attr_dict = {}
-        for item in style_list:
-            key, value = item.split(': ')
-            attr_dict[key] = value
-        return attr_dict
 
     @staticmethod
     def make_date(element):
@@ -423,13 +412,13 @@ def main():
 
 
 if __name__ == '__main__':
-    # mysche = Schedule.from_selenium('ab61274', getpass('pass: '))
-    # with open('schedule.json', 'w') as file:
-    #     json.dump(mysche.dict_, file, indent=True)
-    with open('schedule.json', 'r') as file:
-        mysche = Schedule.from_dict(json.load(file))
-        pprint(mysche.dict_)
-        print('\n'*5, print(len(mysche)))
+    mysche = Schedule.from_selenium('ab61274', getpass('pass: '))
+    with open('schedule.json', 'w') as file:
+        json.dump(mysche.dict_, file, indent=True)
+    # with open('schedule.json', 'r') as file:
+    #     mysche = Schedule.from_dict(json.load(file))
+    #     pprint(mysche.dict_)
+    #     print('\n'*5, print(len(mysche)))
 
 # TODO handle if user chooses schedule_type that isn't avalible
 # TODO handle events without location or simular: could be made by bundling elements by coordinates
