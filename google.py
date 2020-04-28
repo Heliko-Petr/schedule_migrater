@@ -7,12 +7,14 @@ from scraper import Schedule, Event  # this is needed for pickled objects
 import pickle
 import os
 from getpass import getpass
+import json
 
 
 def add_event(act_obj, serv_obj, cal_id):
     event = {
         'summary': act_obj.act,
         'location': act_obj.place,
+        'description': act_obj.info,
         'start': {
             'dateTime': act_obj.start.strftime('%Y-%m-%dT%H:%M:%S'),
             'timeZone': 'Europe/Stockholm'
@@ -59,13 +61,14 @@ if __name__ == '__main__':
     password = getpass('password: ')
     scraper.main(username, password)
 
-    with open('token.pkl', 'rb') as f:
-        credentials = pickle.load(f)
-    with open('schedule.pkl', 'rb') as f:
-        schedule = pickle.load(f)
+    with open('token.pkl', 'rb') as file:
+        credentials = pickle.load(file)
+    with open('schedule.json', 'r') as file:
+        mydict = json.load(file)
+        schedule = Schedule.from_dict(mydict)
 
     service = build('calendar', 'v3', credentials=credentials)
-    calendar_id = get_cal_id(service, 'Skola')
+    calendar_id = get_cal_id(service, 'schedule_migrater')
     event_ids = get_event_ids(service, calendar_id)
 
     if event_ids:  # TODO don't delete entire calendar, only days that have changed

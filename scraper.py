@@ -63,11 +63,12 @@ class SnappyElement:
         return attr_dict
 
 class Event:
-    def __init__(self, act, place, start_obj, stop_obj):
+    def __init__(self, act, place, start_obj, stop_obj, info=''):
         self.act = act
         self.place = place
         self.start = start_obj
         self.stop = stop_obj
+        self.info = info
 
     def __str__(self):
         return '\n'.join(
@@ -75,6 +76,7 @@ class Event:
                 f'start: {self.start.strftime("%Y/%m/%d, %H:%M")}',
                 f'  Event: {self.act}',
                 f'  location: {self.place}',
+                f'info: {self.info}',
                 f'stop: {self.stop.strftime("%Y/%m/%d, %H:%M")}'
             )
         )
@@ -85,7 +87,8 @@ class Event:
             'title': self.act,
             'location': self.place,
             'start': self.start.dict_,
-            'stop':self.stop.dict_
+            'stop':self.stop.dict_,
+            'info': self.info
         }
 
     @classmethod
@@ -94,7 +97,8 @@ class Event:
             dict_['title'],
             dict_['location'],
             JsonDateTime.from_dict(dict_['start']),
-            JsonDateTime.from_dict(dict_['stop'])
+            JsonDateTime.from_dict(dict_['stop']),
+            dict_['info']
         )
 
 class Schedule:
@@ -360,7 +364,7 @@ class Schedule:
                     event = ''
                     teacher = ''
                     location = ''
-                events.append(Event(event, location, start, stop))
+                events.append(Event(event, location, start, stop, teacher))
         return events
 
 
@@ -407,8 +411,10 @@ class Schedule:
         return options
 
 
-def main():
-    pass
+def main(username, password):
+    mysche = Schedule.from_selenium(username, password)
+    with open('schedule.json', 'w') as file:
+        json.dump(mysche.dict_, file, indent=True)
 
 
 if __name__ == '__main__':
