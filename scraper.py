@@ -102,8 +102,9 @@ class Event:
         )
 
 class Schedule:
-    def __init__(self, events, date_created):
+    def __init__(self, events, date_created, days_updated):
         self.date_created = date_created
+        self.days_updated = days_updated
         self.schedule = events
 
     def __iter__(self):
@@ -120,24 +121,27 @@ class Schedule:
 
     def __len__(self):
         return len(self.schedule)
+
     @classmethod
     def from_selenium(cls, username, password):
         dt = JsonDateTime.now()
-        schedule = cls.get_schedule(username, password, dt)
-        return cls(schedule, dt)
+        schedule, days_updated = cls.get_schedule(username, password, dt)
+        return cls(schedule, dt, days_updated)
 
     @classmethod
     def from_dict(cls, dict_):
         return cls(
             [Event.from_dict(dict_) for dict_ in dict_['data']],
-            JsonDateTime.now()
+            JsonDateTime.from_dict(dict_['info']['created']),
+            [JsonDateTime.from_dict(day) for day in dict_['info']['days updated']]
         )
 
     @property
     def dict_(self):
         return {
             'info': {
-                'created': self.date_created.dict_
+                'created': self.date_created.dict_,
+                'days updated': [day.dict_ for day in self.days_updated],
             },
             'data': [event.dict_ for event in self]
         }
@@ -248,11 +252,18 @@ class Schedule:
             quote(url)
             browser.get(url)
 
-        input('choose week in browser and press enter to resume: ')
-
-        WebDriverWait(browser, 10).until(EC.presence_of_element_located((By.CLASS_NAME, 'textBox')))
-        schedule = cls.parse(browser, dt)
-        return schedule
+        schedule = []
+        days_updated = []
+        while True:
+            input('choose a week in the browser and press enter to resume')
+            WebDriverWait(browser, 10).until(EC.presence_of_element_located((By.CLASS_NAME, 'textBox')))
+            new_sche, new_updated = cls.parse(browser, dt)
+            schedule += (new_sche)
+            days_updated += (new_updated)
+            if input('Add another week? (y/n): ').lower() == 'n':
+                break
+        browser.close()
+        return schedule, days_updated
 
     @classmethod
     def parse(cls, selenium, dt):
@@ -269,7 +280,6 @@ class Schedule:
         #TODO 34 is 36 in my schedule, depends on how many timestamps are in the peripheral
         textboxes = [SnappyElement(element) for element in selenium.find_elements_by_class_name('textBox') if element.text]
         boxes = list(map(SnappyElement, selenium.find_elements_by_class_name('box')))
-        selenium.close()
         day_textboxes = [box for box in textboxes if '/' in box.text and 'dag' in box.text]
         day_boxes = boxes[2:7]
 
@@ -297,7 +307,7 @@ class Schedule:
                         timestamps.append(
                             {
                                 'datetime': dt,
-                                'coords': element.coords 
+                                'coords': element.coords
                             }
                         )
                         break
@@ -365,7 +375,12 @@ class Schedule:
                     teacher = ''
                     location = ''
                 events.append(Event(event, location, start, stop, teacher))
-        return events
+
+        days_updated = []
+        for day in days:
+            month, day = day['date']
+            days_updated.append(JsonDateTime(year, month, day))
+        return events, days_updated
 
 
     @staticmethod

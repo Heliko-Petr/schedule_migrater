@@ -48,10 +48,26 @@ def get_cal_id(serv_obj, summary):
     return calendar_id
 
 
-def get_event_ids(serv_obj, calendar_id):
-    events = serv_obj.events().list(calendarId=calendar_id).execute()
-    return [event['id'] for event in events['items']] if events['items'] else None
+def get_event_ids_by_dts(serv_obj, calendar_id, dts):
+    dttuples = []
+    for dt in dts:
+        year = dt.year
+        month = dt.month
+        day = dt.day
+        dttuples.append((year, month, day))
 
+    events = serv_obj.events().list(calendarId=calendar_id).execute()
+    ids = []
+    for event in events['items']:
+        start = parse_caltime(event['start']['dateTime'])
+        if start in dttuples:
+            ids.append(event['id'])
+    return ids
+
+def parse_caltime(str_):
+    str_ = str_[:str_.index('T')]
+    date = [int(a) for a in str_.split('-')]
+    return tuple(date)
 
 if __name__ == '__main__':
     if not os.path.exists('token.pkl'):
@@ -66,10 +82,11 @@ if __name__ == '__main__':
     with open('schedule.json', 'r') as file:
         mydict = json.load(file)
         schedule = Schedule.from_dict(mydict)
+    days_to_clear = schedule.days_updated
 
     service = build('calendar', 'v3', credentials=credentials)
     calendar_id = get_cal_id(service, 'schedule_migrater')
-    event_ids = get_event_ids(service, calendar_id)
+    event_ids = get_event_ids_by_dts(service, calendar_id, days_to_clear)
 
     if event_ids:  # TODO don't delete entire calendar, only days that have changed
         for event_id in event_ids:
