@@ -9,6 +9,7 @@ import os
 from getpass import getpass
 import json
 
+from rich.progress import track
 
 def add_event(act_obj, serv_obj, cal_id):
     event = {
@@ -89,8 +90,8 @@ if __name__ == '__main__':
     event_ids = get_event_ids_by_dts(service, calendar_id, days_to_clear)
 
     if event_ids:  # TODO don't delete entire calendar, only days that have changed
-        for event_id in event_ids:
+        for event_id in track(event_ids, description='deleting events in google calendar'):
             delete_event(service, calendar_id, event_id)
 
-    for event in schedule.schedule:
+    for event in track(schedule.schedule, description='adding events to gogle calendar'):
         add_event(event, service, calendar_id)

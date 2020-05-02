@@ -13,6 +13,7 @@ from pprint import pprint
 import json
 import os
 import csv
+from rich.progress import track
 
 
 class Coords:
@@ -278,8 +279,8 @@ class Schedule:
         )
 
         #TODO 34 is 36 in my schedule, depends on how many timestamps are in the peripheral
-        textboxes = [SnappyElement(element) for element in selenium.find_elements_by_class_name('textBox') if element.text]
-        boxes = list(map(SnappyElement, selenium.find_elements_by_class_name('box')))
+        textboxes = [SnappyElement(element) for element in track(selenium.find_elements_by_class_name('textBox'), description='getting textboxes from website') if element.text]
+        boxes = list(map(SnappyElement, track(selenium.find_elements_by_class_name('box'), description='getting boxes from website')))
         day_textboxes = [box for box in textboxes if '/' in box.text and 'dag' in box.text]
         day_boxes = boxes[2:7]
 
