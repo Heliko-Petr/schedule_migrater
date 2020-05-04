@@ -229,6 +229,8 @@ class Schedule:
             'subject'
         )
         while True:
+            for sche_type in sche_types:
+                print(sche_type)
             sche_type = input('choose sche_type: ')
             if sche_type in sche_types:
                 break
@@ -430,7 +432,7 @@ class Schedule:
 def main(username, password):
     mysche = Schedule.from_selenium(username, password)
     with open('schedule.json', 'w') as file:
-        json.dump(mysche.dict_, file, indent=True)
+        json.dump(mysche.dict_, file, indent=4)
 
 
 if __name__ == '__main__':

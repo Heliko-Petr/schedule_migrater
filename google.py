@@ -10,6 +10,7 @@ from getpass import getpass
 import json
 
 from rich.progress import track
+from pprint import pprint
 
 def add_event(act_obj, serv_obj, cal_id):
     event = {
@@ -50,6 +51,9 @@ def get_cal_id(serv_obj, summary):
 
 
 def get_event_ids_by_dts(serv_obj, calendar_id, dts):
+    """
+
+    """
     dttuples = []
     for dt in dts:
         year = dt.year
@@ -65,10 +69,16 @@ def get_event_ids_by_dts(serv_obj, calendar_id, dts):
             ids.append(event['id'])
     return ids
 
+
 def parse_caltime(str_):
+    """Make tuple containing date from string (from google event json)
+
+    Param str_: 'yyyy-mm-ddT.......'
+    Return: tuple ({year}, {month}, {day})"""
     str_ = str_[:str_.index('T')]
     date = [int(a) for a in str_.split('-')]
     return tuple(date)
+
 
 if __name__ == '__main__':
     if not os.path.exists('token.pkl'):
@@ -89,9 +99,9 @@ if __name__ == '__main__':
     calendar_id = get_cal_id(service, 'schedule_migrater')
     event_ids = get_event_ids_by_dts(service, calendar_id, days_to_clear)
 
-    if event_ids:  # TODO don't delete entire calendar, only days that have changed
-        for event_id in track(event_ids, description='deleting events in google calendar'):
+    if event_ids:
+        for event_id in track(event_ids, description='deleting events from google calendar'):
             delete_event(service, calendar_id, event_id)
 
-    for event in track(schedule.schedule, description='adding events to gogle calendar'):
+    for event in track(schedule.schedule, description='adding events to google calendar'):
         add_event(event, service, calendar_id)
